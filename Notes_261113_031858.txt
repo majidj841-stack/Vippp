@@ -1,0 +1,246 @@
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher, F, Router
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import (
+CallbackQuery,
+InlineKeyboardButton,
+InlineKeyboardMarkup,
+Message,
+)
+
+تنظیمات بات (توکن و آیدی ادمین شما با موفقیت جایگذاری شد)
+API_TOKEN = "9148655255:AAF2jjDSHVz1jblvYmUu-L7jO95zIJH8F-4"
+ADMIN_ID = 8021727126
+
+راه‌اندازی لاگینگ
+logging.basicConfig(level=logging.INFO)
+
+تعریف استیت‌ها (حالت‌های کاربر در فرآیند خرید)
+class PurchaseStates(StatesGroup):
+waiting_for_receipt = State()
+
+router = Router()
+
+اطلاعات کارت بانکی
+CARD_NUMBER = "۵۰۵۴۴۲۱۰۳۰۰۰" # شماره کارت اعلام شده
+CARD_NAME = "سعیده فالی"
+
+----------------- کیبوردها -----------------
+
+def get_main_menu():
+"""منوی اصلی محصولات"""
+keyboard = InlineKeyboardMarkup(
+inline_keyboard=[
+[
+InlineKeyboardButton(
+text="🌐 V2Ray - ۲۰ گیگابایت (۱۵۰,۰۰۰ تومان)",
+callback_data="buy_v2ray_20",
+)
+ ],
+[
+InlineKeyboardButton(
+text="🌐 V2Ray - ۳۰ گیگابایت (۲۰۰,۰۰۰ تومان)",
+callback_data="buy_v2ray_30",
+)
+ ],
+[
+InlineKeyboardButton(
+text="🔒 OpenVPN - یک ماهه نامحدود (۴۵۰,۰۰۰ تومان)",
+callback_data="buy_openvpn",
+)
+ ],
+]
+)
+return keyboard
+
+def get_payment_keyboard():
+"""دکمه کارت به کارت"""
+keyboard = InlineKeyboardMarkup(
+inline_keyboard=[
+[
+InlineKeyboardButton(
+text="💳 پرداخت کارت به کارت", callback_data="card_to_card"
+)
+ ],
+[InlineKeyboardButton(text="🔙 بازگشت به منو", callback_data="back_to_menu")],
+]
+)
+return keyboard
+
+def get_confirm_keyboard():
+"""دکمه تایید پرداخت"""
+keyboard = InlineKeyboardMarkup(
+inline_keyboard=[
+[
+InlineKeyboardButton(
+text="✅ پرداخت کرده‌ام (ارسال رسید)",
+callback_data="i_paid",
+)
+ ],
+[InlineKeyboardButton(text="❌ انصراف", callback_data="back_to_menu")],
+]
+)
+return keyboard
+
+----------------- هندلرها -----------------
+
+@router.message(Command("start"))
+async def cmd_start(message: Message, state: FSMContext):
+await state.clear()
+welcome_text = (
+f"سلام {message.from_user.first_name} عزیز! 👋\n\n"
+"به ربات رسمی فروش سرویس‌های پرسرعت و پایدار ما خوش آمدید. 🚀\n"
+"تمامی سرویس‌ها با بالاترین کیفیت، پایداری بالا و مناسب برای تمامی اپراتورها ارائه می‌شوند.\n\n"
+"لطفاً از منوی زیر سرویس مورد نظر خود را انتخاب کنید:"
+)
+await message.answer(welcome_text, reply_markup=get_main_menu())
+
+@router.callback_query(F.data == "back_to_menu")
+async def back_to_menu(callback: CallbackQuery, state: FSMContext):
+await state.clear()
+await callback.message.edit_text(
+"لطفاً سرویس مورد نظر خود را انتخاب کنید:", reply_markup=get_main_menu()
+)
+await callback.answer()
+
+@router.callback_query(
+F.data.in_(["buy_v2ray_20", "buy_v2ray_30", "buy_openvpn"])
+)
+async def select_product(callback: CallbackQuery, state: FSMContext):
+product_data = {
+"buy_v2ray_20": {"name": "V2Ray - ۲۰ گیگابایت", "price": "۱۵۰,۰۰۰ تومان"},
+"buy_v2ray_30": {"name": "V2Ray - ۳۰ گیگابایت", "price": "۲۰۰,۰۰۰ تومان"},
+"buy_openvpn": {
+"name": "OpenVPN - یک ماهه نامحدود",
+"price": "۴۵۰,۰۰۰ تومان",
+},
+}
+
+selected = product_data[callback.data]
+await state.update_data(
+selected_product=selected["name"], price=selected["price"]
+)
+
+text = (
+f"📦 سرویس انتخابی: {selected['name']}\n"
+f"💰 مبلغ قابل پرداخت: {selected['price']}\n\n"
+"برای ادامه خرید، روی دکمه زیر کلیک کنید:"
+)
+await callback.message.edit_text(
+text, reply_markup=get_payment_keyboard(), parse_mode="Markdown"
+)
+await callback.answer()
+
+@router.callback_query(F.data == "card_to_card")
+async def show_card_info(callback: CallbackQuery):
+text = (
+"💳 اطلاعات کارت به کارت:\n\n"
+f"شماره کارت: {CARD_NUMBER}\n"
+f"به نام: {CARD_NAME}\n\n"
+"⚠️ توجه: لطفاً مبلغ را به کارت بالا واریز کرده و سپس روی دکمه «پرداخت کرده‌ام» کلیک کنید و رسید خود (عکس فیش یا اسکرین‌شات) را ارسال نمایید."
+)
+await callback.message.edit_text(
+text, reply_markup=get_confirm_keyboard(), parse_mode="Markdown"
+)
+await callback.answer()
+
+@router.callback_query(F.data == "i_paid")
+async def process_payment_claim(callback: CallbackQuery, state: FSMContext):
+await state.set_state(PurchaseStates.waiting_for_receipt)
+await callback.message.edit_text(
+"📸 لطفاً تصویر رسید پرداخت یا اسکرین‌شات واریزی خود را در همین‌جا ارسال کنید تا برای بررسی به ادمین ارسال شود:"
+)
+await callback.answer()
+
+@router.message(PurchaseStates.waiting_for_receipt, F.photo)
+async def receive_receipt(message: Message, state: FSMContext):
+user_data = await state.get_data()
+product_name = user_data.get("selected_product", "نامشخص")
+
+ارسال رسید به ادمین
+caption = (
+f"🔔 رسید پرداخت جدید دریافت شد!\n\n"
+f"👤 خریدار: {message.from_user.full_name} (@{message.from_user.username or 'ندارد'})\n"
+f"🆔 آیدی کاربر: {message.from_user.id}\n"
+f"📦 محصول: {product_name}\n\n"
+"برای ارسال لینک اشتراک به این کاربر، از دستور زیر به عنوان ادمین استفاده کنید:"
+)
+
+ارسال عکس رسید همراه با مشخصات به ادمین
+await message.bot.send_photo(
+chat_id=ADMIN_ID,
+photo=message.photo[-1].file_id,
+caption=caption,
+parse_mode="Markdown",
+)
+
+پاسخ به کاربر
+await message.answer(
+"✅ رسید شما با موفقیت دریافت و برای ادمین ارسال شد.\n"
+"پس از بررسی و تایید پرداخت (معمولاً کمتر از ۱۰ دقیقه)، لینک اشتراک برای شما ارسال خواهد شد. 🙏",
+reply_markup=InlineKeyboardMarkup(
+inline_keyboard=[
+[
+InlineKeyboardButton(
+text="🏠 بازگشت به منوی اصلی", callback_data="back_to_menu"
+)
+ ]
+]
+),
+)
+await state.clear()
+
+@router.message(PurchaseStates.waiting_for_receipt)
+async def invalid_receipt_format(message: Message):
+await message.answer(
+"❌ لطفاً حتماً تصویر رسید تراکنش (اسکرین‌شات یا عکس فیش) را ارسال کنید."
+)
+
+دستور ادمین برای ارسال دستی لینک به کاربر
+@router.message(Command("sendlink"))
+async def admin_send_link(message: Message):
+if message.from_user.id != ADMIN_ID:
+return
+
+args = message.text.split(maxsplit=2)
+if len(args) < 3:
+await message.reply(
+"فرمت اشتباه! استفاده صحیح:\n/sendlink &lt;user_id&gt; &lt;subscription_link>",
+parse_mode="Markdown",
+)
+return
+
+target_user_id = int(args[1])
+sub_link = args[2]
+
+try:
+await message.bot.send_message(
+chat_id=target_user_id,
+text=(
+"🎉 پرداخت شما تایید شد!\n\n"
+"سرویس شما فعال گردید. لینک اشتراک اختصاصی شما:\n\n"
+f"{sub_link}\n\n"
+"ممنون از خرید شما ❤️"
+),
+parse_mode="Markdown",
+)
+await message.reply("✅ لینک اشتراک با موفقیت برای کاربر ارسال شد.")
+except Exception as e:
+await message.reply(f"❌ خطا در ارسال پیام به کاربر: {e}")
+
+----------------- اجرای اصلی بات -----------------
+
+async def main():
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(storage=MemoryStorage())
+dp.include_router(router)
+
+print("Bot is up and running...")
+await dp.start_polling(bot)
+
+if name == "main":
+asyncio.run(main())
